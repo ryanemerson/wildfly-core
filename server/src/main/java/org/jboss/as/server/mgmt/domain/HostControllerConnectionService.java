@@ -27,6 +27,7 @@ import java.beans.PropertyChangeListener;
 import java.io.IOException;
 import java.net.URI;
 import java.security.GeneralSecurityException;
+import java.security.KeyStore;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 import java.util.concurrent.ExecutorService;
@@ -35,6 +36,7 @@ import java.util.concurrent.ScheduledExecutorService;
 
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
+import javax.net.ssl.TrustManagerFactory;
 import javax.net.ssl.X509TrustManager;
 
 import org.jboss.as.controller.ControlledProcessState;
@@ -192,21 +194,32 @@ public class HostControllerConnectionService implements Service<HostControllerCl
          * to be established.
          */
         try {
+            X509TrustManager x509TrustManager = null;
+            TrustManagerFactory trustManagerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+            trustManagerFactory.init((KeyStore) null);
+            for (TrustManager trustManager : trustManagerFactory.getTrustManagers()) {
+                if (trustManager instanceof X509TrustManager) {
+                    x509TrustManager = (X509TrustManager)trustManager;
+                    break;
+                }
+            }
+
+            if (x509TrustManager == null) {
+                x509TrustManager = new X509TrustManager() {
+                    public void checkClientTrusted(X509Certificate[] arg0, String arg1) throws CertificateException {
+                    }
+
+                    public void checkServerTrusted(X509Certificate[] arg0, String arg1) throws CertificateException {
+                    }
+
+                    public X509Certificate[] getAcceptedIssuers() {
+                        return null;
+                    }
+                };
+            }
+
             SSLContext sslContext = SSLContext.getInstance("TLS");
-            TrustManager[] trustManagers = new TrustManager[] { new X509TrustManager() {
-                public void checkClientTrusted(X509Certificate[] arg0, String arg1) throws CertificateException {
-                }
-
-                public void checkServerTrusted(X509Certificate[] arg0, String arg1) throws CertificateException {
-                }
-
-                public X509Certificate[] getAcceptedIssuers() {
-                    return null;
-                }
-            } };
-
-            sslContext.init(null, trustManagers, null);
-
+            sslContext.init(null, new TrustManager[]{x509TrustManager}, null);
             return sslContext;
         } catch (GeneralSecurityException e) {
             throw ServerLogger.ROOT_LOGGER.unableToInitialiseSSLContext(e.getMessage());
